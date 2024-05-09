@@ -16,8 +16,7 @@ const std::string root_path = DATA_DIR;
 // Computes the determinant of the matrix whose columns are the vector u and v
 double inline det(const Vector2d &u, const Vector2d &v)
 {
-    // TODO
-    return 0;
+    return u.x() * v.y() - u.y() * v.x();
 }
 
 // Return true iff [a,b] intersects [c,d]
