@@ -1,1 +1,4 @@
 **/.vscode/
+
+# Ignore the build directory
+*/build/
