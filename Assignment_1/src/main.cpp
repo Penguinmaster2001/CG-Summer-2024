@@ -16,14 +16,20 @@ const std::string root_path = DATA_DIR;
 // Computes the determinant of the matrix whose columns are the vector u and v
 double inline det(const Vector2d &u, const Vector2d &v)
 {
-    return u.x() * v.y() - u.y() * v.x();
+    // Well known formula
+    return (u.x() * v.y()) - (u.y() * v.x());
 }
 
 // Return true iff [a,b] intersects [c,d]
 bool intersect_segment(const Vector2d &a, const Vector2d &b, const Vector2d &c, const Vector2d &d)
 {
-    // TODO
-    return true;
+    // parametric coordinates of the intersection
+    double t = det(a - c, c - d) / det(a - b, c - d);
+
+    double u = det(a - b, a - c) / det(a - b, c - d);
+
+    // t, u in [0, 1] for both segments, so they intersect if they are both in [0, 1]
+    return (0.0 <= t) && (t <= 1.0) && (0.0 <= u) && (u <= 1.0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -31,11 +37,34 @@ bool intersect_segment(const Vector2d &a, const Vector2d &b, const Vector2d &c, 
 bool is_inside(const std::vector<Vector2d> &poly, const Vector2d &query)
 {
     // 1. Compute bounding box and set coordinate of a point outside the polygon
-    // TODO
-    Vector2d outside(0, 0);
+    Vector2d top_left(0, 0);
+    Vector2d bot_right(0, 0);
+
+    for (const auto &point : poly)
+    {
+        if (point.x() < top_left.x())
+            top_left.x() = point.x();
+        else if (point.x() > bot_right.x())
+            bot_right.x() = point.x();
+
+        if (point.y() > top_left.y())
+            top_left.y() = point.y();
+        else if (point.y() < bot_right.y())
+            bot_right.y() = point.y();
+    }
+    
+
+    Vector2d outside(top_left.x() - 1, top_left.y() + 1);
+
     // 2. Cast a ray from the query point to the 'outside' point, count number of intersections
-    // TODO
-    return true;
+    bool inside = false;
+    for (int i = 0; i < poly.size(); i++)
+    {
+        if (intersect_segment(outside, query, poly[i], poly[(i + 1) % poly.size()]))
+            inside = !inside;
+    }
+
+    return inside;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
