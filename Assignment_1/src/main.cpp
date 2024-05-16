@@ -17,19 +17,27 @@ const std::string root_path = DATA_DIR;
 double inline det(const Vector2d &u, const Vector2d &v)
 {
     // Well known formula
-    return (u.x() * v.y()) - (u.y() * v.x());
+    return (u.x() * v.y()) - (v.x() * u.y());
 }
 
 // Return true iff [a,b] intersects [c,d]
 bool intersect_segment(const Vector2d &a, const Vector2d &b, const Vector2d &c, const Vector2d &d)
 {
-    // parametric coordinates of the intersection
-    double t = det(a - c, c - d) / det(a - b, c - d);
+    // NOTE: Colinear lines are assumed to not intersect
+    // However, in practice it is extremely rare for lines to be both colinear and overlapping
 
-    double u = det(a - b, a - c) / det(a - b, c - d);
+    // Check first line between second line ends
+    double d1 = det(b - a, c - a);
+    double d2 = det(b - a, d - a);
 
-    // t, u in [0, 1] for both segments, so they intersect if they are both in [0, 1]
-    return (0.0 <= t) && (t <= 1.0) && (0.0 <= u) && (u <= 1.0);
+    if (d1 * d2 >= 0.0)
+        return false;
+
+    // Check second line between first line ends
+    double p1 = det(d - c, a - c);
+    double p2 = det(d - c, b - c);
+
+    return (p1 * p2 < 0.0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -37,24 +45,20 @@ bool intersect_segment(const Vector2d &a, const Vector2d &b, const Vector2d &c, 
 bool is_inside(const std::vector<Vector2d> &poly, const Vector2d &query)
 {
     // 1. Compute bounding box and set coordinate of a point outside the polygon
-    Vector2d top_left(0, 0);
-    Vector2d bot_right(0, 0);
+    Vector2d outside(0, 0);
 
+    // Get the max x and y
     for (const auto &point : poly)
     {
-        if (point.x() < top_left.x())
-            top_left.x() = point.x();
-        else if (point.x() > bot_right.x())
-            bot_right.x() = point.x();
+        if (point.x() > outside.x())
+            outside.x() = point.x();
 
-        if (point.y() > top_left.y())
-            top_left.y() = point.y();
-        else if (point.y() < bot_right.y())
-            bot_right.y() = point.y();
+        if (point.y() > outside.y())
+            outside.y() = point.y();
     }
-    
 
-    Vector2d outside(top_left.x() - 1, top_left.y() + 1);
+    // Ensure it's outside by moving away by 1 in each direction
+    outside += Vector2d(1, 1);
 
     // 2. Cast a ray from the query point to the 'outside' point, count number of intersections
     bool inside = false;
@@ -73,13 +77,72 @@ std::vector<Vector2d> load_xyz(const std::string &filename)
 {
     std::vector<Vector2d> points;
     std::ifstream in(filename);
-    // TODO
+
+    /* WARNING: Very little error handling
+     * Does NOT check for valid numerical strings
+     * Does NOT check for correct file length
+     * I am VERY lazy and I WELCOME security issues with OPEN arms
+     */
+    if (!in.is_open())
+    {
+        std::cout << "Unable to open " << filename << std::endl;
+        return points;
+    }
+
+    std::string line;
+
+    // First line is num of points
+    std::getline(in, line);
+    int num_points = std::stoi(line);
+
+    // Reduces the amount of resizing
+    points.reserve(num_points);
+
+    // Read until all points read or no more lines (hopefully not)
+    for (int i = 0; i < num_points && std::getline(in, line); i++)
+    {
+        std::istringstream iss(line);
+        double x, y;
+
+        // Get the doubles from the line, make a new Vector2d, and put it into points
+        if (iss >> x >> y)
+        {
+            Vector2d new_vector(x, y);
+            points.push_back(new_vector);
+        }
+    }
+
+    in.close();
+
     return points;
 }
 
 void save_xyz(const std::string &filename, const std::vector<Vector2d> &points)
 {
-    // TODO
+    std::ofstream out(filename);
+
+    if (!out.is_open())
+    {
+        std::cout << "Unable to open " << filename << std::endl;
+        return;
+    }
+
+    // Write the number of points 
+    out << points.size() << "\n";
+
+    // Loop through every point and write it to the file
+    for (const auto &point : points)
+    {
+        double x = point.x();
+        double y = point.y();
+
+        out << x << " " << y << " 0\n";
+    }
+
+    // Add an extra line
+    out << std::endl;
+
+    out.close();
 }
 
 std::vector<Vector2d> load_obj(const std::string &filename)
