@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <vector>
 #include <cstdint>
+#include <memory>
+#include <random>
 
 unsigned char double_to_unsignedchar(const double d)
 {
