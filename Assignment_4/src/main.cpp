@@ -49,7 +49,7 @@ public:
         int triangle; // Index of the node triangle (-1 for internal nodes)
     };
 
-    std::vector<Node*> nodes;
+    std::vector<Node> nodes;
     int root;
 
     AABBTree() = default;                           // Default empty constructor
@@ -71,7 +71,7 @@ private:
 
 const std::string data_dir = DATA_DIR;
 const std::string filename("raytrace.png");
-const std::string mesh_filename(data_dir + "cube.off");
+const std::string mesh_filename(data_dir + "dragon.off");
 
 
 //Camera settings
@@ -190,22 +190,26 @@ AABBTree::AABBTree(const MatrixXd &V, const MatrixXi &F)
         {
             centroids.row(i) += V.row(F(i, k));
         }
+
         centroids.row(i) /= F.cols();
     }
 
     //Vector containing the list of triangle indices
     std::vector<int> triangles(F.rows());
+
     std::iota(triangles.begin(), triangles.end(), 0);
 
     root = build_recursive(V, F, centroids, 0, triangles.size(), -1, triangles);
 }
 
 
-// V are the vertices
-// F are the facets
-// centroids are the centers of the tris
+
+// V are the vertices n x 3
+// F are the facets m x 3
+// centroids are the centers of the facets m x 3
 // from is the index of the first tri possibly in this box
 // to is the index after the last tri possibly in this box
+// triangles is the order of the triangles along the largest axis
 int AABBTree::build_recursive(const MatrixXd &V, const MatrixXi &F, const MatrixXd &centroids,
     int from, int to, int parent, std::vector<int> &triangles)
 {
@@ -215,45 +219,41 @@ int AABBTree::build_recursive(const MatrixXd &V, const MatrixXi &F, const Matrix
         return -1;
     }
 
-    int vert_ind0 = F(from, 0);
-    int vert_ind1 = F(from, 1);
-    int vert_ind2 = F(from, 2);
-
 
     AABBTree::Node new_node;
-    AABBTree::Node* new_node_ptr = &new_node;
 
-    // Figure out the index of this node
-    // Linear search for open spot
     int index = nodes.size();
-    std::cout << "SizeA: " << nodes.size() << "\n";
-
-    std::cout << "from: " << from << ", to: " << to << ", parent: " << parent << ", index: " << index << ", size: " << (to - from) << "\n";
-
 
 
     // If there is only 1 triangle left, then we are at a leaf
     if (to - from == 1)
     {
-        new_node_ptr->bbox = bbox_from_triangle(V.row(vert_ind0), V.row(vert_ind1), V.row(vert_ind2));
-        new_node_ptr->parent = parent;
-        new_node_ptr->left = -1;
-        new_node_ptr->right = -1;
-        new_node_ptr->triangle = from;
+        int vert_ind0 = F(triangles[from], 0);
+        int vert_ind1 = F(triangles[from], 1);
+        int vert_ind2 = F(triangles[from], 2);
 
-        std::cout << "Tri: " << from << "\n";
+        new_node.bbox = bbox_from_triangle(V.row(vert_ind0), V.row(vert_ind1), V.row(vert_ind2));
+        new_node.parent = parent;
+        new_node.left = -1;
+        new_node.right = -1;
+        new_node.triangle = triangles[from];
 
-        nodes.push_back(new_node_ptr);
+        nodes.push_back(new_node);
 
         return index;
     }
 
-    AlignedBox3d centroid_box;
 
-    //TODO Use AlignedBox3d to find the box around the current centroids
-    for (int vert_ind = from; vert_ind < to; ++vert_ind)
+    AlignedBox3d centroid_box(3);
+
+    // Use AlignedBox3d to find the box around the current centroids
+    for (int i = from; i < to; ++i)
     {
-        centroid_box.extend(Vector3d(V.row(vert_ind)));
+        int vert_ind0 = F(triangles[i], 0);
+        int vert_ind1 = F(triangles[i], 1);
+        int vert_ind2 = F(triangles[i], 2);
+
+        centroid_box.extend(bbox_from_triangle(V.row(vert_ind0), V.row(vert_ind1), V.row(vert_ind2)));
     }
 
 
@@ -261,43 +261,37 @@ int AABBTree::build_recursive(const MatrixXd &V, const MatrixXi &F, const Matrix
     Vector3d extent = centroid_box.diagonal();
 
 
-    //TODO find the largest dimension
-    int longest_dim = 0;
-    if (extent.x() < extent.y() || extent.x() < extent.z())
-    {
-        longest_dim = extent.y() > extent.z() ? 1 : 2;
-    }
+    // Find the largest dimension
+    int longest_dim = extent.x() > extent.y() ? (extent.x() > extent.z() ? 0 : 2) : (extent.y() > extent.z() ? 1 : 2);
 
 
-    // TODO sort centroids along the longest dimension
-    std::sort(triangles.begin() + from, triangles.begin() + to, [&](int f1, int f2) {
-        //TODO sort the **triangles** along the centroid largest dimension
-        // return true if triangle f1 comes before triangle f2
 
-        return centroids(f1, longest_dim) < centroids(f2, longest_dim);
-    });
+    // Sort centroids along the longest dimension
+    std::sort(triangles.begin() + from, triangles.begin() + to, [&](int f1, int f2)
+        {
+            // return true if triangle f1 comes before triangle f2
+            return centroids(f1, longest_dim) < centroids(f2, longest_dim);
+        });
+
 
     int split = (from + to) / 2;
 
-    //TODO Create a new internal node and do a recursive call to build the left and right part of the tree
-    //TODO finally return the correct index
+    // Create a new internal node and do a recursive call to build the left and right part of the tree
 
-    nodes.push_back(new_node_ptr);
+    // Trust me there's a reason I did it this way
+    nodes.push_back(new_node);
 
-    new_node_ptr->bbox = centroid_box;
-    new_node_ptr->parent = parent;
-    new_node_ptr->left = build_recursive(V, F, centroids, from, split, index, triangles);
-    new_node_ptr->right = build_recursive(V, F, centroids, split, to, index, triangles);
-    new_node_ptr->triangle = -1;
+    new_node.bbox = centroid_box;
+    new_node.parent = parent;
+    new_node.left = build_recursive(V, F, centroids, from, split, index, triangles);
+    new_node.right = build_recursive(V, F, centroids, split, to, index, triangles);
+    new_node.triangle = -1;
+
+    // Yeah this is bad
+    nodes[index] = new_node;
 
 
-    std::cout << "Index: " << index << "\n";
-    std::cout << "Size: " << nodes.size() << "\n";
-    std::cout << "Left: " << new_node_ptr->left << "\n";
-    std::cout << "Left: " << nodes[index]->left << "\n";
-    std::cout << "Right: " << new_node_ptr->right << "\n";
-    std::cout << "Right: " << nodes[index]->right << "\n";
-
+    // Finally return the correct index
     return index;
 }
 
@@ -364,25 +358,26 @@ double ray_triangle_intersection(const Vector3d &ray_origin, const Vector3d &ray
 // Compute whether the ray intersects the given box.
 bool ray_box_intersection(const Vector3d &ray_origin, const Vector3d &ray_direction, const AlignedBox3d &box)
 {
-    // we are not testing with the real surface here anyway.
+    // we are not testing with the real surface here anyway
 
-    // This is my implementation of the fast branchless aabb ray intersection alg found here:
-    // https://tavianator.com/2011/ray_box.html#fast-branchless-raybounding-box-intersections
-    // I adapted it to work with the specific aabb api and ray implementation in this project
+   double tmin = -std::numeric_limits<double>::infinity();
+    double tmax = std::numeric_limits<double>::infinity();
 
-    double tx1 = (box.min().x() - ray_origin.x()) * ray_direction.x();
-    double tx2 = (box.max().x() - ray_origin.x()) * ray_direction.x();
+    for (int i = 0; i < 3; ++i)
+    {
+        double invD = 1.0 / ray_direction[i];
+        double t0 = (box.min()[i] - ray_origin[i]) * invD;
+        double t1 = (box.max()[i] - ray_origin[i]) * invD;
 
-    double tmin = fmin(tx1, tx2);
-    double tmax = fmax(tx1, tx2);
+        if (invD < 0.0) std::swap(t0, t1);
 
-    double ty1 = (box.min().y() - ray_origin.y()) * ray_direction.y();
-    double ty2 = (box.max().y() - ray_origin.y()) * ray_direction.y();
+        tmin = std::max(tmin, t0);
+        tmax = std::min(tmax, t1);
 
-    tmin = fmax(tmin, fmin(ty1, ty2));
-    tmax = fmin(tmax, fmax(ty1, ty2));
+        if (tmax < tmin) return false;
+    }
 
-    return tmax >= tmin;
+    return true;
 }
 
 
@@ -394,7 +389,7 @@ bool find_nearest_object(const Vector3d &ray_origin, const Vector3d &ray_directi
     Vector3d tmp_p, tmp_N;
 
     // Method (1): Traverse every triangle and return the closest hit.
-    int intersect = false;
+    bool intersect = false;
     double closest_t = std::numeric_limits<double>::max(); //closest t is "+ infinity"
 
     if (!use_bvh_tree)
@@ -436,21 +431,20 @@ bool find_nearest_object(const Vector3d &ray_origin, const Vector3d &ray_directi
     // The tree is empty
     if (bvh.root < 0) return false;
 
-    std::queue<AABBTree::Node*> current_nodes;
+    std::queue<AABBTree::Node> current_nodes;
 
     current_nodes.push(bvh.nodes[bvh.root]);
     
     while (!current_nodes.empty())
     {
-        AABBTree::Node* current_node = current_nodes.front();
-        std::cout << "left: " << current_node->left << ", right: " << current_node->right << ", parent: " << current_node->parent << ", triangle: " << current_node->triangle << "\n";
-        
+        AABBTree::Node current_node = current_nodes.front();
+
         // Found the triangle thingy
-        if (current_node->triangle >= 0)
+        if (current_node.triangle >= 0)
         {
-            int vert_ind0 = facets(current_node->triangle, 0);
-            int vert_ind1 = facets(current_node->triangle, 1);
-            int vert_ind2 = facets(current_node->triangle, 2);
+            int vert_ind0 = facets(current_node.triangle, 0);
+            int vert_ind1 = facets(current_node.triangle, 1);
+            int vert_ind2 = facets(current_node.triangle, 2);
 
             //returns t and writes on tmp_p and tmp_N
             const double t = ray_triangle_intersection(ray_origin, ray_direction,
@@ -473,22 +467,22 @@ bool find_nearest_object(const Vector3d &ray_origin, const Vector3d &ray_directi
         current_nodes.pop();
 
         // Enqueue left child
-        if (current_node->left >= 0)
+        if (current_node.left >= 0)
         {
-            AABBTree::Node* left_node = bvh.nodes[current_node->left];
+            AABBTree::Node left_node = bvh.nodes[current_node.left];
 
-            if (ray_box_intersection(ray_origin, ray_direction, left_node->bbox))
+            if (ray_box_intersection(ray_origin, ray_direction, left_node.bbox))
             {
                 current_nodes.push(left_node);
             }
         }
 
         // Enqueue right child
-        if (current_node->right >= 0)
+        if (current_node.right >= 0)
         {
-            AABBTree::Node* right_node = bvh.nodes[current_node->right];
+            AABBTree::Node right_node = bvh.nodes[current_node.right];
 
-            if (ray_box_intersection(ray_origin, ray_direction, right_node->bbox))
+            if (ray_box_intersection(ray_origin, ray_direction, right_node.bbox))
             {
                 current_nodes.push(right_node);
             }
