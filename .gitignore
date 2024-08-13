@@ -1,4 +1,10 @@
 **/.vscode/
+<<<<<<< HEAD
 **/build/
 **/bin/
 **/bin_rel/
+=======
+
+# Ignore the build directory
+*/build/
+>>>>>>> Assignment1
